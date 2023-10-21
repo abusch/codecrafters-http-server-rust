@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
@@ -19,15 +19,27 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    let mut buf = [0u8; 1024];
-    let n = stream.read(&mut buf).await.context("Reading request")?;
-    println!("Read {n} bytes");
+pub async fn handle_connection(stream: TcpStream) -> Result<()> {
+    let mut stream = BufStream::new(stream);
+
+    // Read first line
+    let mut line = String::new();
+    stream.read_line(&mut line).await.context("Read request")?;
+
+    let parts: Vec<&str> = line.split(' ').collect();
+    assert_eq!(parts.len(), 3, "Invalid request!");
+    let request_path = parts[1];
+
+    let response = match request_path {
+        "/" => "HTTP/1.1 200 OK\r\n\r\n",
+        _ => "HTTP/1.1 404 Not Found\r\n\r\n",
+    };
 
     stream
-        .write_all(b"HTTP/1.1 200 OK\r\n\r\n")
+        .write_all(response.as_bytes())
         .await
         .context("Writing response")?;
 
+    stream.flush().await.context("Flushing response")?;
     Ok(())
 }
