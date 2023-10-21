@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use tokio::net::TcpListener;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -9,9 +10,27 @@ async fn main() -> Result<()> {
         .await
         .context("Creating TcpListener")?;
 
-    while let Ok((stream, addr)) = listener.accept().await {
+    while let Ok((stream, _addr)) = listener.accept().await {
         println!("accepted new connection");
+        handle_connection(stream).await?;
+        println!("finished handling connection");
     }
+
+    Ok(())
+}
+
+pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
+    let mut buf = Vec::with_capacity(1024);
+    let n = stream
+        .read_to_end(&mut buf)
+        .await
+        .context("Reading request")?;
+    println!("Read {n} bytes");
+
+    stream
+        .write_all(b"HTTP/1.1 200 OK\r\n\r\n")
+        .await
+        .context("Writing response")?;
 
     Ok(())
 }
