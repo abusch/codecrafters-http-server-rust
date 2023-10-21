@@ -20,11 +20,8 @@ async fn main() -> Result<()> {
 }
 
 pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    let mut buf = Vec::with_capacity(1024);
-    let n = stream
-        .read_to_end(&mut buf)
-        .await
-        .context("Reading request")?;
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf).await.context("Reading request")?;
     println!("Read {n} bytes");
 
     stream
