@@ -24,11 +24,14 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
 
-    // Read first line
+    // Read the Head of the request
     let mut lines = Vec::new();
     {
         let mut lines_stream = reader.lines();
         while let Some(line) = lines_stream.next_line().await.context("Reading request")? {
+            if line.trim().is_empty() {
+                break;
+            }
             lines.push(line);
         }
     }
