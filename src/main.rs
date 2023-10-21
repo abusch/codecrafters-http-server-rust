@@ -43,13 +43,13 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
     let mut response = String::new();
     if request_path == "/" {
-        response.push_str("HTTP/1.1 200 OK\r\n");
+        response.push_str("HTTP/1.1 200 OK\r\n\r\n");
     } else if let Some(content) = request_path.strip_prefix("/echo/") {
         let content_length = content.len();
         response.push_str("HTTP/1.1 200 OK\r\n");
         response.push_str("Content-Type: text/plain\r\n");
         response.push_str(&format!("Content-Length: {content_length}\r\n"));
-        response.push_str("\r\n\r\n");
+        response.push_str("\r\n");
         response.push_str(content);
     } else {
         response.push_str("HTTP/1.1 404 Not Found\r\n");
