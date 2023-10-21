@@ -42,7 +42,9 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let request_path = parts[1];
 
     let mut response = String::new();
-    if let Some(content) = request_path.strip_prefix("/echo/") {
+    if request_path == "/" {
+        response.push_str("HTTP/1.1 200 OK\r\n");
+    } else if let Some(content) = request_path.strip_prefix("/echo/") {
         let content_length = content.len();
         response.push_str("HTTP/1.1 200 OK\r\n");
         response.push_str("Content-Type: text/plain\r\n");
