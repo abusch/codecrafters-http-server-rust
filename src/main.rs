@@ -52,7 +52,7 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
         response.push_str("\r\n");
         response.push_str(content);
     } else {
-        response.push_str("HTTP/1.1 404 Not Found\r\n");
+        response.push_str("HTTP/1.1 404 Not Found\r\n\r\n");
     }
 
     writer
