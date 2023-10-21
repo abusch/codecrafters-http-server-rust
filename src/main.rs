@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
@@ -19,27 +19,42 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-pub async fn handle_connection(stream: TcpStream) -> Result<()> {
-    let mut stream = BufStream::new(stream);
+pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
+    let (reader, writer) = stream.split();
+    let reader = BufReader::new(reader);
+    let mut writer = BufWriter::new(writer);
 
     // Read first line
-    let mut line = String::new();
-    stream.read_line(&mut line).await.context("Read request")?;
+    let mut lines = Vec::new();
+    {
+        let mut lines_stream = reader.lines();
+        while let Some(line) = lines_stream.next_line().await.context("Reading request")? {
+            lines.push(line);
+        }
+    }
+    println!("Read {} lines from request", lines.len());
 
-    let parts: Vec<&str> = line.split(' ').collect();
+    let parts: Vec<&str> = lines[0].split(' ').collect();
     assert_eq!(parts.len(), 3, "Invalid request!");
     let request_path = parts[1];
 
-    let response = match request_path {
-        "/" => "HTTP/1.1 200 OK\r\n\r\n",
-        _ => "HTTP/1.1 404 Not Found\r\n\r\n",
-    };
+    let mut response = String::new();
+    if let Some(content) = request_path.strip_prefix("/echo/") {
+        let content_length = content.len();
+        response.push_str("HTTP/1.1 200 OK\r\n");
+        response.push_str("Content-Type: text/plain\r\n");
+        response.push_str(&format!("Content-Length: {content_length}\r\n"));
+        response.push_str("\r\n\r\n");
+        response.push_str(content);
+    } else {
+        response.push_str("HTTP/1.1 404 Not Found\r\n");
+    }
 
-    stream
+    writer
         .write_all(response.as_bytes())
         .await
         .context("Writing response")?;
 
-    stream.flush().await.context("Flushing response")?;
+    writer.flush().await.context("Flushing response")?;
     Ok(())
 }
