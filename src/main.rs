@@ -1,11 +1,11 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("Logs from your program will appear here!");
-
     let listener = TcpListener::bind("127.0.0.1:4221")
         .await
         .context("Creating TcpListener")?;
@@ -35,11 +35,15 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
             lines.push(line);
         }
     }
-    println!("Read {} lines from request", lines.len());
 
     let parts: Vec<&str> = lines[0].split(' ').collect();
     assert_eq!(parts.len(), 3, "Invalid request!");
     let request_path = parts[1];
+
+    let user_agent = &lines[1..]
+        .iter()
+        .find_map(|line| line.strip_prefix("User-Agent: "))
+        .context("Finding user-agent")?;
 
     let mut response = String::new();
     if request_path == "/" {
@@ -51,6 +55,13 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
         response.push_str(&format!("Content-Length: {content_length}\r\n"));
         response.push_str("\r\n");
         response.push_str(content);
+    } else if request_path == "/user-agent" {
+        let content_length = user_agent.len();
+        response.push_str("HTTP/1.1 200 OK\r\n");
+        response.push_str("Content-Type: text/plain\r\n");
+        response.push_str(&format!("Content-Length: {content_length}\r\n"));
+        response.push_str("\r\n");
+        response.push_str(user_agent);
     } else {
         response.push_str("HTTP/1.1 404 Not Found\r\n\r\n");
     }
