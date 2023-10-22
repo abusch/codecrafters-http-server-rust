@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::spawn;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -11,9 +10,14 @@ async fn main() -> Result<()> {
         .context("Creating TcpListener")?;
 
     while let Ok((stream, _addr)) = listener.accept().await {
-        println!("accepted new connection");
-        handle_connection(stream).await?;
-        println!("finished handling connection");
+        spawn(async {
+            println!("accepted new connection");
+            if let Err(e) = handle_connection(stream).await {
+                println!("Error handling connection: {e}");
+            } else {
+                println!("finished handling connection");
+            }
+        });
     }
 
     Ok(())
