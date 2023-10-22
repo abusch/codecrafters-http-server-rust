@@ -44,11 +44,6 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     assert_eq!(parts.len(), 3, "Invalid request!");
     let request_path = parts[1];
 
-    let user_agent = &lines[1..]
-        .iter()
-        .find_map(|line| line.strip_prefix("User-Agent: "))
-        .context("Finding user-agent")?;
-
     let mut response = String::new();
     if request_path == "/" {
         response.push_str("HTTP/1.1 200 OK\r\n\r\n");
@@ -60,6 +55,10 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
         response.push_str("\r\n");
         response.push_str(content);
     } else if request_path == "/user-agent" {
+        let user_agent = &lines[1..]
+            .iter()
+            .find_map(|line| line.strip_prefix("User-Agent: "))
+            .context("Finding user-agent")?;
         let content_length = user_agent.len();
         response.push_str("HTTP/1.1 200 OK\r\n");
         response.push_str("Content-Type: text/plain\r\n");
