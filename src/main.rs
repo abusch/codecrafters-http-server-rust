@@ -3,9 +3,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
+use http::{Request, Response};
+use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
+
+pub mod http;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -46,69 +49,54 @@ pub async fn handle_connection(mut stream: TcpStream, dir: &Path) -> Result<()> 
     let reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
 
-    // Read the Head of the request
-    let mut lines = Vec::new();
-    {
-        let mut lines_stream = reader.lines();
-        while let Some(line) = lines_stream.next_line().await.context("Reading request")? {
-            if line.trim().is_empty() {
-                break;
-            }
-            lines.push(line);
-        }
-    }
+    let request = http::parse_request(reader).await?;
 
-    let parts: Vec<&str> = lines[0].split(' ').collect();
-    assert_eq!(parts.len(), 3, "Invalid request!");
-    let request_path = parts[1];
+    let response = handle_request(request, dir)?;
 
-    if request_path == "/" {
-        writer.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await?;
-    } else if let Some(content) = request_path.strip_prefix("/echo/") {
+    response
+        .write(&mut writer)
+        .await
+        .context("Writing response")?;
+    writer.flush().await.context("Flushing response")?;
+    Ok(())
+}
+
+pub fn handle_request(request: Request, dir: &Path) -> Result<Response> {
+    let response = if &request.path == "/" {
+        Response::ok()
+    } else if let Some(content) = request.path.strip_prefix("/echo/") {
         let content_length = content.len();
-        writer.write_all(b"HTTP/1.1 200 OK\r\n").await?;
-        writer.write_all(b"Content-Type: text/plain\r\n").await?;
-        writer
-            .write_all(format!("Content-Length: {content_length}\r\n").as_bytes())
-            .await?;
-        writer.write_all(b"\r\n").await?;
-        writer.write_all(content.as_bytes()).await?;
-    } else if request_path == "/user-agent" {
-        let user_agent = &lines[1..]
-            .iter()
-            .find_map(|line| line.strip_prefix("User-Agent: "))
+        Response::ok()
+            .set_header("Content-Type", "text/plain")
+            .set_header("Content-Length", content_length.to_string().as_str())
+            .set_body(content.as_bytes())
+    } else if request.path == "/user-agent" {
+        let user_agent = request
+            .headers
+            .get("User-Agent")
             .context("Finding user-agent")?;
         let content_length = user_agent.len();
-        writer.write_all(b"HTTP/1.1 200 OK\r\n").await?;
-        writer.write_all(b"Content-Type: text/plain\r\n").await?;
-        writer
-            .write_all(format!("Content-Length: {content_length}\r\n").as_bytes())
-            .await?;
-        writer.write_all(b"\r\n").await?;
-        writer.write_all(user_agent.as_bytes()).await?;
-    } else if let Some(file_name) = request_path.strip_prefix("/files/") {
+        Response::ok()
+            .set_header("Content-Type", "text/plain")
+            .set_header("Content-Length", content_length.to_string().as_str())
+            .set_body(user_agent.as_bytes())
+    } else if let Some(file_name) = request.path.strip_prefix("/files/") {
         let file_path = dir.join(file_name);
         let exists = file_path.try_exists().context("Checking if file exists")?;
         if exists {
             let content = fs::read(file_path).context("Reading file content")?;
             let content_length = content.len();
 
-            writer.write_all(b"HTTP/1.1 200 OK\r\n").await?;
-            writer
-                .write_all(b"Content-Type: application/octet-stream\r\n")
-                .await?;
-            writer
-                .write_all(format!("Content-Length: {content_length}\r\n").as_bytes())
-                .await?;
-            writer.write_all(b"\r\n").await?;
-            writer.write_all(&content).await?;
+            Response::ok()
+                .set_header("Content-Type", "application/octet-stream")
+                .set_header("Content-Length", content_length.to_string().as_str())
+                .set_body(content)
         } else {
-            writer.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await?;
+            Response::not_found()
         }
     } else {
-        writer.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").await?;
-    }
+        Response::not_found()
+    };
 
-    writer.flush().await.context("Flushing response")?;
-    Ok(())
+    Ok(response)
 }
