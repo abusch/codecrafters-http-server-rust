@@ -1,9 +1,10 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use http::{Request, Response};
+use http::{Method, Request, Response};
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
@@ -82,17 +83,31 @@ pub fn handle_request(request: Request, dir: &Path) -> Result<Response> {
             .set_body(user_agent.as_bytes())
     } else if let Some(file_name) = request.path.strip_prefix("/files/") {
         let file_path = dir.join(file_name);
-        let exists = file_path.try_exists().context("Checking if file exists")?;
-        if exists {
-            let content = fs::read(file_path).context("Reading file content")?;
-            let content_length = content.len();
+        match request.method {
+            Method::Get => {
+                let exists = file_path.try_exists().context("Checking if file exists")?;
+                if exists {
+                    let content = fs::read(file_path).context("Reading file content")?;
+                    let content_length = content.len();
 
-            Response::ok()
-                .set_header("Content-Type", "application/octet-stream")
-                .set_header("Content-Length", content_length.to_string().as_str())
-                .set_body(content)
-        } else {
-            Response::not_found()
+                    Response::ok()
+                        .set_header("Content-Type", "application/octet-stream")
+                        .set_header("Content-Length", content_length.to_string().as_str())
+                        .set_body(content)
+                } else {
+                    Response::not_found()
+                }
+            }
+            Method::Post => {
+                let mut file = fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .open(file_path)
+                    .context("Creating file")?;
+                file.write_all(request.body.as_slice())
+                    .context("Writing file")?;
+                Response::created()
+            }
         }
     } else {
         Response::not_found()
